@@ -24,15 +24,15 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "ateam",
+    "awesome_steminists_power_rangers_the_justice_league",
     /* First member's full name */
-    "Harry Bovik",
+    "Khaled AlHosani",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "kah579@nyu.edu",
     /* Second member's full name (leave blank if none) */
-    "",
+    "Yana Chala",
     /* Second member's email address (leave blank if none) */
-    ""
+    "ydc223@nyu.edu"
 };
 
 /* single word (4) or double word (8) alignment */
@@ -49,6 +49,7 @@ team_t team = {
  */
 int mm_init(void)
 {
+
     return 0;
 }
 
