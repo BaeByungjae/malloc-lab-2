@@ -127,6 +127,7 @@ void *mm_malloc(size_t size)
 	size_t extendsize;	//Amount to extend hea if no fit
 	char *bp;
 
+    //Ignore spurious requests 
 	if (size==0)
 		return NULL;
 
@@ -144,8 +145,9 @@ void *mm_malloc(size_t size)
 		return bp;
 	}
 
+    //No fit found. Get more memory and place the block
 	extendsize=MAX(asize,CHUNKSIZE);
-	if((bp=extend_heap(extendsize/WSIZE)==NULL))
+	if((bp=extend_heap(extendsize/WSIZE))==NULL)
 		return NULL;
 
 	place(bp,asize);
@@ -167,9 +169,9 @@ void *mm_malloc(size_t size)
 /*
  * mm_free
  */
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
-	size_t =GET_SIZE(HDRP(bp));
+	size_t size = GET_SIZE(HDRP(bp));
 
 	PUT(HDRP(bp) , PACK(size, 0));
 	PUT(FTRP(bp) , PACK(size, 0));
@@ -269,8 +271,8 @@ static void place(void *bp, size_t asize)
 	
 	if((csize - asize) >= (2*DSIZE)) 
 	{
-		PUT(HDRP(bp), PACK(aszie, 1));
-		PUT(FTRP(bp), PACK(aszie, 1));
+		PUT(HDRP(bp), PACK(asize, 1));
+		PUT(FTRP(bp), PACK(asize, 1));
 		bp = NEXT_BLKP(bp);
 		PUT(HDRP(bp), PACK(csize-asize, 0));
 		PUT(FTRP(bp), PACK(csize-asize, 0));
