@@ -207,21 +207,40 @@ static void *coalesce(void *bp)
 
 	size_t size = GET_SIZE(HDRP(bp));
 
+	//Case 1
 	if(prev_alloc && next_alloc)
 	{
 		return bp;
 	}
 
-	if(prev_alloc && !next_alloc)
+	//Case 2
+	else if(prev_alloc && !next_alloc)
 	{
-		size+=GET_SIZE
+		size+=GET_SIZE(HDRP(NEXT_BLKP(bp)));
+		PUT(HDRP(bp), PACK(size, 0));
+		PUT(FTRP(bp), PACK(size, 0));
+	}
+
+	//Case 3
+	else if(!prev_alloc && next_alloc)
+	{
+		size+=GET_SIZE(HDRP(PREV_BLKP(bp)));
+		PUT(FTRP(bp), PACK(size, 0));
+		PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+		bp = PREV_BLKP(bp);
+	}
+
+	//Case 4
+	else 
+	{
+		size+=GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
+		PUT(HDRP(PREV_BLKP(bp)),PACK(size,0));
+		PUT(FTRP(NEXT_BLKP(bp)),PACK(size,0));
+		bp=PREV_BLKP(bp);
 	}
 
 	return bp;
 }
-
-
-
 
 /*
  * find_fit
