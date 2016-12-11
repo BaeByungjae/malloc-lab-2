@@ -41,6 +41,8 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
+// Store predecessor or successor pointer for free blocks 
+#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -70,11 +72,22 @@ team_t team = {
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
 #define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - WSIZE)))
 
+// Address of free block's predecessor and successor entries 
+#define PRED_PTR(ptr) ((char *)(ptr))
+#define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
+
+// Address of free block's predecessor and successor on the segregated list 
+#define PRED(ptr) (*(char **)(ptr))
+#define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
+
 static void *heap_listp; 
 static void *extend_heap(size_t words);
 static void *find_fit (size_t asize);
 static void place(void *bp, size_t asize);
 static void *coalesce(void *bp);
+
+#define LISTLIMIT     20   
+void *free_lists[LISTLIMIT];
 
 /* 
  * mm_init - initialize the malloc package.
@@ -284,4 +297,5 @@ static void place(void *bp, size_t asize)
 		PUT(FTRP(bp), PACK(csize, 1));
 	} 
 }
+
 
