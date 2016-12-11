@@ -41,10 +41,10 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
-// Store predecessor or successor pointer for free blocks 
-#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+// // Store predecessor or successor pointer for free blocks 
+// #define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
 
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
+// #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 #define WSIZE 4 /* Word and header/footer size (bytes) */
 #define DSIZE 8 /* Double word size (bytes) */
@@ -70,15 +70,15 @@ team_t team = {
 
 /* Given block ptr bp, compute adress of next and previous blocks */
 #define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - WSIZE)))
+#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
-// Address of free block's predecessor and successor entries 
-#define PRED_PTR(ptr) ((char *)(ptr))
-#define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
+// // Address of free block's predecessor and successor entries 
+// #define PRED_PTR(ptr) ((char *)(ptr))
+// #define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
 
-// Address of free block's predecessor and successor on the segregated list 
-#define PRED(ptr) (*(char **)(ptr))
-#define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
+// // Address of free block's predecessor and successor on the segregated list 
+// #define PRED(ptr) (*(char **)(ptr))
+// #define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
 
 static void *heap_listp; 
 static void *extend_heap(size_t words);
@@ -86,8 +86,8 @@ static void *find_fit (size_t asize);
 static void place(void *bp, size_t asize);
 static void *coalesce(void *bp);
 
-#define LISTLIMIT     20   
-void *free_lists[LISTLIMIT];
+// #define LISTLIMIT     20   
+// void *free_lists[LISTLIMIT];
 
 /* 
  * mm_init - initialize the malloc package.
@@ -96,16 +96,20 @@ int mm_init(void)
 {
     /* Create the initial empty heap */
     if((heap_listp = mem_sbrk(4*WSIZE)) == (void *) -1)
-        return -1;
+    	{
+    	printf("\nFirst one\n");
+        return -1;}
     PUT(heap_listp, 0); /* Alignment padding*/
-    PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Alignment padding*/ 
-    PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Alignment padding*/
-    PUT(heap_listp + (3*WSIZE), PACK(0, 1)); /* Alignment padding*/
+    PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue heaer*/ 
+    PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer*/
+    PUT(heap_listp + (3*WSIZE), PACK(0, 1)); /* Epilogue header*/
     heap_listp += (2*WSIZE);
 
     /* Extend the empty heao with a free block of CHUNKSIZE bytes*/
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
-        return -1;
+        {
+    	printf("\nSecond one\n");
+        return -1;}
 
     return 0;
 }
@@ -117,14 +121,14 @@ static void *extend_heap(size_t words)
     size_t size;
 
     /* Allocates an even number of words to maintain alignment*/
-    size = (words % 2) ? (words+1) * WSIZE: words * WSIZE;
-    if((long)(bp = mem_sbrk(size)) < 0)
+    size = ALIGN(words);
+    if((bp = mem_sbrk(size)) == (void *) -1)
         return NULL;
 
     /* Initialize free block header/footer and the epilogue header */
     PUT(HDRP(bp), PACK(size,0)); /* Free block header*/
     PUT(FTRP(bp), PACK(size,0)); /* Free block footer*/
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0 , 1)); /* New epilogue footer */
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0 , 1)); /* New epilogue header */
 
     /* Coalesce if the prev block was free */
     return coalesce(bp);
@@ -188,7 +192,7 @@ void mm_free(void *bp)
 
 	PUT(HDRP(bp) , PACK(size, 0));
 	PUT(FTRP(bp) , PACK(size, 0));
-	coalesce(bp);
+	//coalesce(bp);
 }
 
 /*
@@ -196,20 +200,20 @@ void mm_free(void *bp)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
-    void *newptr;
-    size_t copySize;
+     void *oldptr = ptr;
+     void *newptr;
+     size_t copySize=0;
     
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize);
-    mm_free(oldptr);
-    return newptr;
-}
+     newptr = mm_malloc(size);
+     if (newptr == NULL)
+       return NULL;
+     //copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+     if (size < copySize)
+       copySize = size;
+     memcpy(newptr, oldptr, copySize);
+     mm_free(oldptr);
+     return newptr;
+ }
 
 /*
  * coalesce
