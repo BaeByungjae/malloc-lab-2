@@ -107,7 +107,7 @@ int mm_init(void)
     /* $begin mminit */
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
-    if (extend_heap(CHUNKSIZE) == NULL) 
+    if (extend_heap(CHUNKSIZE/WSIZE) == NULL) 
         return -1;
     // mm_checkheap(1);
     return 0;
@@ -193,6 +193,57 @@ void mm_free(void *bp)
 }
  
 
+/*
+ * coalesce - Boundary tag coalescing. Return ptr to coalesced block
+ */
+static void *coalesce(void *ptr) 
+{
+    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(ptr)));
+    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(ptr)));
+    size_t size = GET_SIZE(HDRP(ptr));
+    
+
+    // Do not coalesce with previous block if the previous block is tagged with Reallocation tag
+    if (GET_TAG(HDRP(PREV_BLKP(ptr))))
+        prev_alloc = 1;
+
+    if (prev_alloc && next_alloc) {                         // Case 1
+        return ptr;
+    }
+    else if (prev_alloc && !next_alloc) {                   // Case 2
+        // delete_node(ptr);
+        // delete_node(NEXT_BLKP(ptr));
+        size += GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+        PUT(HDRP(ptr), PACK(size, 0));
+        PUT(FTRP(ptr), PACK(size, 0));
+    } else if (!prev_alloc && next_alloc) {                 // Case 3 
+        // delete_node(ptr);
+        // delete_node(PREV_BLKP(ptr));
+        size += GET_SIZE(HDRP(PREV_BLKP(ptr)));
+        PUT(FTRP(ptr), PACK(size, 0));
+        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
+        ptr = PREV_BLKP(ptr);
+    } else {                                                // Case 4
+        // delete_node(ptr);
+        // delete_node(PREV_BLKP(ptr));
+        // delete_node(NEXT_BLKP(ptr));
+        size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
+        PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
+        PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
+        ptr = PREV_BLKP(ptr);
+    }
+        
+    /* $end mmfree */
+    /* Make sure the rover isn't pointing into the free block */
+    /* that we just coalesced */
+    if ((rover > (char *)ptr) && (rover < NEXT_BLKP(ptr))) 
+        rover = ptr;
+    /* $begin mmfree */
+      // printf("coalesce\n\n");
+      // checkheap(1);
+    return ptr;
+}
+/* $end mmfree */
 
 /*
  * mm_realloc - Naive implementation of realloc
@@ -280,6 +331,7 @@ void mm_checkheap(int verbose)
 /* 
  * extend_heap - Extend heap with free block and return its block pointer
  */
+/* $begin mmextendheap */
 static void *extend_heap(size_t size) 
 {
     void *ptr;                   
