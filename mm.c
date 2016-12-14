@@ -71,11 +71,24 @@ team_t team = {
 /* Given block ptr bp, compute address of next and previous blocks */
 #define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) 
 #define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) 
+
+/* Store predecessor or successor pointer for free blocks */
+#define SET_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+
+/* Address of free block's predecessor and successor entries */
+#define PRED_PTR(ptr) ((char *)(ptr))
+#define SUCC_PTR(ptr) ((char *)(ptr) + WSIZE)
+
+/* Address of free block's predecessor and successor on the segregated list */
+#define PRED(ptr) (*(char **)(ptr))
+#define SUCC(ptr) (*(char **)(SUCC_PTR(ptr)))
+
 /* $end mallocmacros */
 
 /* Global variables */
 static char *heap_listp = 0;  /* Pointer to first block */  
 static char *rover;           /* Next fit rover */
+static void *free_list;       /* root of explicit free list */
 
 /* Function prototypes for internal helper routines */
 static void *extend_heap(size_t words);
@@ -85,7 +98,8 @@ static void *coalesce(void *bp);
 static void printblock(void *bp); 
 static void checkheap(int verbose);
 static void checkblock(void *bp);
-
+static void insert_node(void *ptr, size_t size);
+static void delete_node(void *ptr);
 
 /* 
  * mm_init - Initialize the memory manager 
@@ -100,8 +114,8 @@ int mm_init(void)
     PUT_NOTAG(heap_listp + (1 * WSIZE), PACK(DSIZE, 1)); /* Prologue header */
     PUT_NOTAG(heap_listp + (2 * WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
     PUT_NOTAG(heap_listp + (3 * WSIZE), PACK(0, 1)); /* Epilogue header */
-     heap_listp += (2*WSIZE);                     //line:vm:mm:endinit  
-    /* $end mminit */
+    heap_listp += (2*WSIZE);
+    free_list = NULL;
 
     rover = heap_listp;
     /* $begin mminit */
@@ -139,15 +153,22 @@ void *mm_malloc(size_t size)
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE); //line:vm:mm:sizeadjust3
 
-    /* Search the free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {  //line:vm:mm:findfitcall4
-          // printf("HERRO");
+    // /* Search the free list for a fit */
+    // if ((bp = find_fit(asize)) != NULL) {  //line:vm:mm:findfitcall4
+    //       // printf("HERRO");
 
-        place(bp, asize);                  //line:vm:mm:findfitplace
-        // mm_checkheap(1);
+    //     place(bp, asize);                  //line:vm:mm:findfitplace
+    //     // mm_checkheap(1);
 
-        return bp;
+    //     return bp;
+    // }
+    bp = free_list;
+    // Ignore blocks that are too small or marked with the reallocation bit
+    while ((bp != NULL) && ((asize > GET_SIZE(HDRP(bp))) || (GET_TAG(HDRP(bp)))))
+    {
+        bp = PRED(bp);
     }
+
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize,CHUNKSIZE);
@@ -186,6 +207,7 @@ void mm_free(void *bp)
     PUT(HDRP(bp), PACK(size, 0));
     PUT(FTRP(bp), PACK(size, 0));
     // printf("%s\n", "COAL from FREE");
+    insert_node(bp, size);
     coalesce(bp);
         // mm_checkheap(0);
 
@@ -211,22 +233,22 @@ static void *coalesce(void *ptr)
         return ptr;
     }
     else if (prev_alloc && !next_alloc) {                   // Case 2
-        // delete_node(ptr);
-        // delete_node(NEXT_BLKP(ptr));
+        delete_node(ptr);
+        delete_node(NEXT_BLKP(ptr));
         size += GET_SIZE(HDRP(NEXT_BLKP(ptr)));
         PUT(HDRP(ptr), PACK(size, 0));
         PUT(FTRP(ptr), PACK(size, 0));
     } else if (!prev_alloc && next_alloc) {                 // Case 3 
-        // delete_node(ptr);
-        // delete_node(PREV_BLKP(ptr));
+        delete_node(ptr);
+        delete_node(PREV_BLKP(ptr));
         size += GET_SIZE(HDRP(PREV_BLKP(ptr)));
         PUT(FTRP(ptr), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
         ptr = PREV_BLKP(ptr);
     } else {                                                // Case 4
-        // delete_node(ptr);
-        // delete_node(PREV_BLKP(ptr));
-        // delete_node(NEXT_BLKP(ptr));
+        delete_node(ptr);
+        delete_node(PREV_BLKP(ptr));
+        delete_node(NEXT_BLKP(ptr));
         size += GET_SIZE(HDRP(PREV_BLKP(ptr))) + GET_SIZE(HDRP(NEXT_BLKP(ptr)));
         PUT(HDRP(PREV_BLKP(ptr)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(ptr)), PACK(size, 0));
@@ -285,7 +307,7 @@ void *mm_realloc(void *ptr, size_t size)
         remainder += extendsize;
       }
       
-      // delete_node(NEXT(ptr));
+      delete_node(NEXT_BLKP(ptr));
       
       // Do not split block
       PUT_NOTAG(HDRP(ptr), PACK(new_size + remainder, 1)); /* Block header */
@@ -346,7 +368,7 @@ static void *extend_heap(size_t size)
     PUT_NOTAG(HDRP(ptr), PACK(asize, 0));  
     PUT_NOTAG(FTRP(ptr), PACK(asize, 0));   
     PUT_NOTAG(HDRP(NEXT_BLKP(ptr)), PACK(0, 1)); 
-    // insert_node(ptr, asize);
+    insert_node(ptr, asize);
 
     // printf("%s\n", "COAL from EXT");
     // printf("SIZE: %u\n", asize);
@@ -370,7 +392,7 @@ static void place(void *ptr, size_t asize)
       // printf("\nSIIIIIZE%d\n", asize);
       
       /* Remove block from list */
-      // delete_node(ptr);
+      delete_node(ptr);
       
       if (remainder >= 2*DSIZE) {
         /* Split block */
@@ -378,7 +400,7 @@ static void place(void *ptr, size_t asize)
         PUT(FTRP(ptr), PACK(asize, 1)); /* Block footer */
         PUT_NOTAG(HDRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); /* Next header */
         PUT_NOTAG(FTRP(NEXT_BLKP(ptr)), PACK(remainder, 0)); /* Next footer */  
-        // insert_node(NEXT_BLKP(ptr), remainder);
+        insert_node(NEXT_BLKP(ptr), remainder);
       } else {
         /* Do not split block */
         PUT(HDRP(ptr), PACK(ptr_size, 1)); /* Block header */
@@ -405,12 +427,12 @@ static void *find_fit(size_t asize)
 
 
     /* Search from the rover to the end of list */
-    for ( ; GET_SIZE(HDRP(rover)) > 0; rover = NEXT_BLKP(rover))
+    for ( ; GET_SIZE(HDRP(rover)) > 0; rover = PRED(rover))
         if ((!GET_ALLOC(HDRP(rover)) && (asize <= GET_SIZE(HDRP(rover)))) && !(GET_TAG(HDRP(rover))))
             return rover;
 
     /* search from start of list to old rover */
-    for (rover = heap_listp; rover < oldrover; rover = NEXT_BLKP(rover))
+    for (rover = heap_listp; rover < oldrover; rover = PRED(rover))
         if ((!GET_ALLOC(HDRP(rover)) && (asize <= GET_SIZE(HDRP(rover)))) && !(GET_TAG(HDRP(rover))))
             return rover;
 
@@ -471,4 +493,65 @@ void checkheap(int verbose)
         printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
         printf("Bad epilogue header\n");
+}
+
+static void insert_node(void *ptr, size_t size) {
+    void *search_ptr = ptr;
+    void *insert_ptr = NULL;
+    
+    // Keep size ascending order and search
+    search_ptr = free_list;
+    while ((search_ptr != NULL) && (size > GET_SIZE(HDRP(search_ptr)))) {
+        insert_ptr = search_ptr;
+        search_ptr = PRED(search_ptr);
+    }
+    
+    // Set predecessor and successor 
+    if (search_ptr != NULL) {
+        if (insert_ptr != NULL) {
+            SET_PTR(PRED_PTR(ptr), search_ptr);
+            SET_PTR(SUCC_PTR(search_ptr), ptr);
+            SET_PTR(SUCC_PTR(ptr), insert_ptr);
+            SET_PTR(PRED_PTR(insert_ptr), ptr);
+        } else {
+            SET_PTR(PRED_PTR(ptr), search_ptr);
+            SET_PTR(SUCC_PTR(search_ptr), ptr);
+            SET_PTR(SUCC_PTR(ptr), NULL);
+            free_list= ptr;
+        }
+    } else {
+        if (insert_ptr != NULL) {
+            SET_PTR(PRED_PTR(ptr), NULL);
+            SET_PTR(SUCC_PTR(ptr), insert_ptr);
+            SET_PTR(PRED_PTR(insert_ptr), ptr);
+        } else {
+            SET_PTR(PRED_PTR(ptr), NULL);
+            SET_PTR(SUCC_PTR(ptr), NULL);
+            free_list = ptr;
+        }
+    }
+    
+    return;
+}
+
+
+static void delete_node(void *ptr) 
+{
+    if (PRED(ptr) != NULL) {
+        if (SUCC(ptr) != NULL) {
+            SET_PTR(SUCC_PTR(PRED(ptr)), SUCC(ptr));
+            SET_PTR(PRED_PTR(SUCC(ptr)), PRED(ptr));
+        } else {
+            SET_PTR(SUCC_PTR(PRED(ptr)), NULL);
+            free_list = PRED(ptr);
+        }
+    } else {
+        if (SUCC(ptr) != NULL) {
+            SET_PTR(PRED_PTR(SUCC(ptr)), NULL);
+        } else {
+            free_list = NULL;
+        }
+    }
+    
+    return;
 }
