@@ -1,13 +1,8 @@
-/*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
- * 
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  A block is pure payload. There are no headers or
- * footers.  Blocks are never coalesced or reused. Realloc is
- * implemented directly using mm_malloc and mm_free.
- *
- * NOTE TO STUDENTS: Replace this header comment with your own header
- * comment that gives a high level description of your solution.
+/* 
+ * Simple, 32-bit and 64-bit clean allocator based on implicit free
+ * lists, first-fit placement, and boundary tag coalescing, as described
+ * in the CS:APP3e text. Blocks must be aligned to doubleword (8 byte) 
+ * boundaries. Minimum block size is 16 bytes. 
  */
 #include <stdio.h>
 #include <string.h>
@@ -29,10 +24,15 @@ team_t team = {
     "ydc223@nyu.edu"
 };
 
-/*
- * If NEXT_FIT defined use next fit search, else use first-fit search 
- */
-#define NEXT_FITx
+
+/* single word (4) or double word (8) alignment */
+#define ALIGNMENT 8
+
+/* rounds up to the nearest multiple of ALIGNMENT */
+#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
+
+
+#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 /* $begin mallocmacros */
 /* Basic constants and macros */
@@ -43,23 +43,30 @@ team_t team = {
 #define MAX(x, y) ((x) > (y)? (x) : (y))  
 
 /* Pack a size and allocated bit into a word */
-#define PACK(size, alloc)  ((size) | (alloc)) //line:vm:mm:pack
+#define PACK(size, alloc)  ((size) | (alloc)) 
 
 /* Read and write a word at address p */
-#define GET(p)       (*(unsigned int *)(p))            //line:vm:mm:get
-#define PUT(p, val)  (*(unsigned int *)(p) = (val))    //line:vm:mm:put
+#define GET(p)       (*(unsigned int *)(p))        
+#define PUT(p, val)  (*(unsigned int *)(p) = (val))  
+
+// /* Adjust the reallocation tag */
+// #define SET_RTAG(p)   (*(unsigned int *)(p) = GET(p) | 0x2)
+// #define UNSET_RTAG(p) (*(unsigned int *)(p) = GET(p) & ~0x2)  
 
 /* Read the size and allocated fields from address p */
-#define GET_SIZE(p)  (GET(p) & ~0x7)                   //line:vm:mm:getsize
-#define GET_ALLOC(p) (GET(p) & 0x1)                    //line:vm:mm:getalloc
+#define GET_SIZE(p)  (GET(p) & ~0x7)             
+#define GET_ALLOC(p) (GET(p) & 0x1)  
+#define GET_TAG(p)   (GET(p) & 0x2)
+#define SET_RATAG(p)   (GET(p) |= 0x2)
+#define REMOVE_RATAG(p) (GET(p) &= ~0x2)               
 
 /* Given block ptr bp, compute address of its header and footer */
-#define HDRP(bp)       ((char *)(bp) - WSIZE)                      //line:vm:mm:hdrp
-#define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) //line:vm:mm:ftrp
+#define HDRP(bp)       ((char *)(bp) - WSIZE)                     
+#define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE) 
 
 /* Given block ptr bp, compute address of next and previous blocks */
-#define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) //line:vm:mm:nextblkp
-#define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) //line:vm:mm:prevblkp
+#define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE))) 
+#define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE))) 
 /* $end mallocmacros */
 
 /* Global variables */
@@ -74,6 +81,7 @@ static void *coalesce(void *bp);
 static void printblock(void *bp); 
 static void checkheap(int verbose);
 static void checkblock(void *bp);
+
 
 /* 
  * mm_init - Initialize the memory manager 
@@ -129,6 +137,8 @@ void *mm_malloc(size_t size)
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {  //line:vm:mm:findfitcall
         place(bp, asize);                  //line:vm:mm:findfitplace
+            // mm_checkheap(1);
+
         return bp;
     }
 
@@ -137,6 +147,7 @@ void *mm_malloc(size_t size)
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)  
         return NULL;                                  //line:vm:mm:growheap2
     place(bp, asize);                                 //line:vm:mm:growheap3
+    // mm_checkheap(1);
     return bp;
 } 
 
@@ -220,7 +231,6 @@ void *mm_realloc(void *ptr, size_t size)
 {
     size_t oldsize;
     void *newptr;
-
     /* If size == 0 then this is just free, and we return NULL. */
     if(size == 0) {
         mm_free(ptr);
@@ -232,20 +242,40 @@ void *mm_realloc(void *ptr, size_t size)
         return mm_malloc(size);
     }
 
-    newptr = mm_malloc(size);
-
-    /* If realloc() fails the original block is left untouched  */
-    if(!newptr) {
-        return 0;
-    }
-
     /* Copy the old data. */
     oldsize = GET_SIZE(HDRP(ptr));
-    if(size < oldsize) oldsize = size;
-    memcpy(newptr, ptr, oldsize);
+    if(size < (oldsize-DSIZE)) {
+      // printf("HUH? %u\n\n",GET_TAG(HDRP(ptr)));
+
+      // mm_checkheap(1);     
+      return ptr;
+    }
+
+    if((size >= (oldsize-DSIZE))) {
+      // printf("case2\n");
+      size +=  size;
+      size = ALIGN(size);
+      // SET_RATAG(HDRP(ptr));
+      // SET_RATAG(FTRP(ptr));
+
+
+      newptr = mm_malloc(size);
+      // printf("THIS SHOULD REALLY BE 1: %u\n\n",GET_TAG(HDRP(ptr)));
+
+
+      /* If realloc() fails the original block is left untouched  */
+      if(!newptr) {
+          return 0;
+      }
+
+      memcpy(newptr, ptr, oldsize);
+      mm_free(ptr);
+      mm_checkheap(1);
+
+      return newptr;
+    }
 
     /* Free the old block. */
-    mm_free(ptr);
 
     return newptr;
 }
@@ -308,6 +338,8 @@ static void place(void *bp, size_t asize)
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
     }
+    // printf("place");
+    // checkheap(1);
 }
 /* $end mmplace */
 

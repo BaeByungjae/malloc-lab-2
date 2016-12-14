@@ -344,6 +344,22 @@ int main(int argc, char **argv)
 	    p2 = ((double) (1.0 - UTIL_WEIGHT)) * 
 		(avg_mm_throughput/AVG_LIBC_THRUPUT);
 	}
+
+    // double avg_libc_throughput;
+    // double libc_ops = 0;
+    // double libc_secs = 0;
+    // for (int i = 0; i < num_tracefiles; i++) {
+    //     libc_ops += libc_stats[i].ops;
+    //     libc_secs += libc_stats[i].secs;
+    // }
+    // avg_libc_throughput = libc_ops/libc_secs;
+    // if (avg_mm_throughput > avg_libc_throughput) {
+    //     p2 = (double)(1.0 - UTIL_WEIGHT);
+    // }
+    // else {
+    //     p2 = ((double) (1.0 - UTIL_WEIGHT)) *
+    //     (avg_mm_throughput/avg_libc_throughput);
+    // }
 	
 	perfindex = (p1 + p2)*100.0;
 	printf("Perf index = %.0f (util) + %.0f (thru) = %.0f/100\n",
